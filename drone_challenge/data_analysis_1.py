@@ -47,6 +47,31 @@ imin_a = df["current_a"].min()
 #Voltage stats
 pack_v_min = df["pack_voltage_v"].min()
 pack_v_max = df["pack_voltage_v"].max()
+pack_v_mean = df["pack_voltage_v"].mean() 
+pack_v_median = df["pack_voltage_v"].median() 
+discharge_mask = df["current_a"] < 0 
+pack_v_median_discharge = df.loc[discharge_mask, "pack_voltage_v"].median()
+
+
+#Per-cell stats 
+per_cell_stats = []
+for idx, c in enumerate(cell_cols, start=1):
+    vv = df.loc[discharge_mask, c + "_v"]
+    per_cell_stats.append({
+        "cell": idx,
+        "median_discharge_v": vv.median(),
+        "min_v": vv.min(),
+        "max_v": vv.max()
+    })
+
+#Internal resistance estimation
+di = np.diff(df["current_a"].values, prepend=df["current_a"].values[0])
+dv = np.diff(df["pack_voltage_v"].values, prepend=df["pack_voltage_v"].values[0])
+threshold_a = max(0.2, 0.1 * np.nanmax(np.abs(df['current_a'])))
+short_dt = df["dt_h"].values * 3600
+valid = (np.abs(di) >= threshold_a) & (short_dt <= np.percentile(short_dt[short_dt > 0], 50))
+R_est = np.abs(np.divide(dv, di, out=np.full_like(dv, np.nan), where=valid))
+R_pack_milliohm = np.nanmedian(R_est) * 1000
 
 #Print summary
 print("\n--- Battery Specifications ---")
@@ -61,6 +86,14 @@ print(f"Max charge current: {imax_a*1000:.1f} mA")
 print(f"Max discharge current: {-imin_a*1000:.1f} mA")
 print(f"Pack voltage min: {pack_v_min:.3f} V")
 print(f"Pack voltage max: {pack_v_max:.3f} V")
+print(f"Pack voltage mean: {pack_v_mean:.3f} V") 
+print(f"Pack voltage median: {pack_v_median:.3f} V") 
+print(f"Pack voltage median (discharge): {pack_v_median_discharge:.3f} V") 
+print(f"Estimated pack internal resistance: {R_pack_milliohm:.2f} mΩ")
+
+print("\n--- Per-cell discharge voltages ---") 
+for cell in per_cell_stats: 
+    print(f"Cell {cell['cell']}: median {cell['median_discharge_v']:.3f} V, " f"min {cell['min_v']:.3f} V, max {cell['max_v']:.3f} V")
 
 #Plot: Current vs Time
 plt.figure()
@@ -87,3 +120,4 @@ plt.close()
 print("\nPlots saved as:")
 print("  - current_vs_time.png")
 print("  - pack_voltage_vs_time.png")
+
